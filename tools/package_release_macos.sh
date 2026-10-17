@@ -45,6 +45,9 @@ add docs/macos_launcher.md
 
 NODE="$(command -v node)"
 mkdir -p "$STAGE/node"
+if [[ "$(uname)" == "Darwin" ]] && otool -L "$NODE" | tail -n +2 | awk '{print $1}' | grep -qvE '^(/usr/lib/|/System/)'; then
+    echo "$NODE links against non-system libraries (Homebrew build?). Use the static nodejs.org binary." >&2; exit 1
+fi
 cp "$NODE" "$STAGE/node/node"
 curl -fsSL "https://raw.githubusercontent.com/nodejs/node/$(node --version)/LICENSE" -o "$STAGE/node/LICENSE"
 
@@ -52,5 +55,5 @@ cp "$ROOT/tools/package_readme_macos.txt" "$STAGE/README.txt"
 
 echo "Packing $OUT/$NAME.tar.gz"
 mkdir -p "$OUT"
-tar -C "$OUT" --owner=0 --group=0 -czf "$OUT/$NAME.tar.gz" "$NAME"
+COPYFILE_DISABLE=1 tar -C "$OUT" -czf "$OUT/$NAME.tar.gz" "$NAME"
 echo "Done: $OUT/$NAME.tar.gz ($(du -m "$OUT/$NAME.tar.gz" | cut -f1) MB)"
