@@ -1,0 +1,69 @@
+name: macOS launcher
+
+on:
+  push:
+    branches: [main, copilot/port-to-macos]
+    paths: ['launcher/**', 'tools/package_release_macos.sh', 'tools/package_readme_macos.txt', 'docs/macos_launcher.md', '.github/workflows/macos-launcher.yml']
+  pull_request:
+    paths: ['launcher/**', 'tools/package_release_macos.sh', 'tools/package_readme_macos.txt', 'docs/macos_launcher.md', '.github/workflows/macos-launcher.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, runner: macos-14 }
+          - { arch: x64, runner: macos-15-intel }
+    steps:
+      - uses: actions/checkout@v4
+
+      # The nodejs.org build: it only links system libraries, so it can be bundled (Homebrew's cannot).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri -> ../../build-launcher-package
+
+      - name: Launcher tests
+        working-directory: launcher
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: Package
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/build-launcher-package
+        run: tools/package_release_macos.sh
+
+      - name: Check the archive
+        run: |
+          archive=$(ls dist/Refract-*-macos-${{ matrix.arch }}.tar.gz)
+          echo "$archive"
+          tar -tzf "$archive" | grep -E '/Refract$|/node/node$|/README.txt$'
+          shasum -a 256 "$archive" | tee "$archive.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Refract-macos-${{ matrix.arch }}
+          path: |
+            dist/Refract-*-macos-${{ matrix.arch }}.tar.gz
+            dist/Refract-*-macos-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
