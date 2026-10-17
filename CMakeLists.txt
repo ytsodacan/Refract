@@ -20,13 +20,13 @@ if(REFRACT_BUILD_HOST_BRIDGE)
   add_subdirectory(host-bridge)
 endif()
 
-# Linux PC viewer ("Play on PC"; viewer/ is the Windows one's own CMake project). Needs SDL3: the SDL3-devel
-# package, or its headers in REFRACT_SDL3_HEADERS with the installed libSDL3.so.0.
-if(UNIX AND NOT APPLE AND NOT ANDROID)
-  option(REFRACT_BUILD_VIEWER "Build the Linux PC viewer (SDL3)" ON)
+# Unix PC viewer ("Play on PC"; viewer/ is the Windows one's own CMake project). Needs SDL3: the SDL3-devel
+# package, or its headers in REFRACT_SDL3_HEADERS with the installed SDL3 shared library.
+if(UNIX AND NOT ANDROID)
+  option(REFRACT_BUILD_VIEWER "Build the Unix PC viewer (SDL3)" ON)
   set(REFRACT_SDL3_HEADERS "" CACHE PATH "Directory holding SDL3/SDL.h, if not installed system-wide")
   find_path(REFRACT_SDL3_INCLUDE SDL3/SDL.h HINTS "${REFRACT_SDL3_HEADERS}")
-  find_library(REFRACT_SDL3_LIBRARY NAMES SDL3 libSDL3.so.0)
+  find_library(REFRACT_SDL3_LIBRARY NAMES SDL3 libSDL3.so.0 libSDL3.dylib)
   if(REFRACT_BUILD_VIEWER AND REFRACT_SDL3_INCLUDE AND REFRACT_SDL3_LIBRARY)
     add_executable(refract-viewer viewer/viewer_linux.cpp)
     target_include_directories(refract-viewer PRIVATE "${REFRACT_SDL3_INCLUDE}")
@@ -34,7 +34,7 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
     include(host-bridge/loading_screen.cmake)
     refract_add_loading_screen(refract-viewer)
   elseif(REFRACT_BUILD_VIEWER)
-    message(WARNING "SDL3 not found (install SDL3-devel or set REFRACT_SDL3_HEADERS): the Linux PC viewer is not built")
+    message(WARNING "SDL3 not found (install SDL3-devel or set REFRACT_SDL3_HEADERS): the Unix PC viewer is not built")
   endif()
 endif()
 

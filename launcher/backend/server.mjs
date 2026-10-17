@@ -23,14 +23,18 @@ import { Emulator, redact, diskSizes } from '../core/emulator.mjs';
 import { checkSetup, fixSetup, headsetStatus, refreshPath } from '../core/setup.mjs';
 import { WaydroidRuntime, WaydroidEmulator, findAdb } from '../core/waydroid.mjs';
 import { checkSetupLinux, fixSetupLinux, headsetStatusLinux } from '../core/setup_linux.mjs';
+import { MacRuntime, MacEmulator } from '../core/macos.mjs';
+import { checkSetupMac, fixSetupMac, headsetStatusMac } from '../core/setup_macos.mjs';
 import { loadLibraryArtwork } from '../core/artwork.mjs';
 import { remoteZipNames, vrSdk } from '../core/apk_sdk.mjs';
 import { checkUpdate, cleanUpdate, installUpdate } from '../core/update.mjs';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(directory, '../..');
-// On Linux Android runs in Waydroid (core/waydroid.mjs); on Windows in the Android Emulator.
-const linux = process.platform === 'linux';
+const platform = process.platform;
+const linux = platform === 'linux';
+const mac = platform === 'darwin';
+const windows = platform === 'win32';
 // The launcher's version (launcher/package.json), which update checks compare with the latest release.
 const version = JSON.parse(readFileSync(path.join(directory, '../package.json'), 'utf8')).version;
 const option = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -55,6 +59,12 @@ function refreshArtwork() {
   return artworkTask;
 }
 const message = error => redact(error?.message || error);
+function setupApi() {
+  return linux ? { check: checkSetupLinux, fix: fixSetupLinux, headset: headsetStatusLinux }
+    : mac ? { check: checkSetupMac, fix: fixSetupMac, headset: headsetStatusMac }
+      : { check: checkSetup, fix: fixSetup, headset: headsetStatus };
+}
+
 function publicState() {
   return { ...state.data, platform: process.platform, signedIn: Boolean(token), account, accountImage, running: runtime.game, runningMode: runtime.mode || null, busy, fixing, fixProgress, starting, emulatorTask,
     version, updateProgress,
@@ -269,17 +279,17 @@ const methods = {
   stop: () => runtime.stop(),
   // Not while a game runs: its session owns the headset, and a probe would compete with it.
   headset: async () => runtime.child ? { connected: runtime.mode === 'vr', runtime: '', busy: true }
-    : headsetCheck ??= (linux ? headsetStatusLinux : headsetStatus)(runtime).finally(() => { headsetCheck = null; }),
+    : headsetCheck ??= setupApi().headset(runtime).finally(() => { headsetCheck = null; }),
   setup: async () => {
     // An SDK installed since the launcher started (Android Studio's first run) replaces a missing one.
     if (!await isSdk(state.data.settings.sdk)) { const sdk = await findSdk(); if (sdk !== state.data.settings.sdk) { state.data.settings.sdk = sdk; await persist(); } }
-    return (linux ? checkSetupLinux : checkSetup)(root, state.data.settings);
+    return setupApi().check(root, state.data.settings);
   },
   fixSetup: async action => {
     if (fixing) throw new Error('A setup step is already running.');
     if (runtime.child) throw new Error('Close the running game first.');
     fixing = String(action); changed();
-    try { await (linux ? fixSetupLinux : fixSetup)(root, state.data.settings, fixing, text => { fixProgress = text; changed(); }); }
+    try { await setupApi().fix(root, state.data.settings, fixing, text => { fixProgress = text; changed(); }); }
     finally { fixing = ''; fixProgress = ''; changed(); }
     return methods.setup();
   },
@@ -293,6 +303,7 @@ const methods = {
     return { ...result, running: runtime.game?.package || '' };
   },
   emulatorAction: async (action, arg) => {
+    if (mac) throw new Error('Android runtime controls are not available on macOS yet.');
     if (!Object.hasOwn(emulatorActions, action)) throw new Error('Unknown emulator action.');
     if (emulatorTask) throw new Error('Wait for the current emulator task to finish.');
     const update = stage => { emulatorTask = { action, stage }; changed(); };
@@ -316,14 +327,20 @@ const methods = {
     return (await runtime.adbAt(port, ['shell', 'pidof', pkg], { timeout: 5000 }).catch(() => '')).trim().split(/\s+/).filter(Boolean).map(Number);
   },
   exportDiagnostics: async () => {
-    const setup = await (linux ? checkSetupLinux : checkSetup)(root, state.data.settings).catch(e => ({ error: message(e) }));
+    const setup = await setupApi().check(root, state.data.settings).catch(e => ({ error: message(e) }));
     const result = await emulator.exportDiagnostics({ settings: state.data.settings, running: runtime.game, runningMode: runtime.mode || null, setup,
       jobs: state.data.jobs.slice(0, 10).map(j => ({ name: j.name, status: j.status, stage: j.stage, error: j.error })) });
     return { openPath: result.base, ...result };
   },
   openLogs: async which => {
-    const folders = { emulator: path.join(root, 'build-windows-emulator'), game: path.join(root, 'build-windows-game'), data: state.directory,
-      screenshots: path.join(state.directory, 'screenshots'), diagnostics: path.join(state.directory, 'diagnostics') };
+    const folders = linux
+      ? { emulator: path.join(root, 'runs/waydroid-session'), game: path.join(root, 'runs'), data: state.directory,
+        screenshots: path.join(state.directory, 'screenshots'), diagnostics: path.join(state.directory, 'diagnostics') }
+      : mac
+        ? { emulator: state.directory, game: state.directory, data: state.directory,
+          screenshots: path.join(state.directory, 'screenshots'), diagnostics: path.join(state.directory, 'diagnostics') }
+        : { emulator: path.join(root, 'build-windows-emulator'), game: path.join(root, 'build-windows-game'), data: state.directory,
+          screenshots: path.join(state.directory, 'screenshots'), diagnostics: path.join(state.directory, 'diagnostics') };
     const target = folders[which]; if (!target) throw new Error('Unknown folder.');
     await fs.mkdir(target, { recursive: true }); return { openPath: target };
   },
@@ -343,6 +360,7 @@ const methods = {
     if (!validUserId(settings.userId)) throw new Error('The user ID must be a whole number from 1 to 9223372036854775807.');
     if (!validEyeSize(settings.pcEyeSize) || !validRenderScale(settings.vrRenderScale))
       throw new Error('Check the resolution: PC eye size 512 to 4096 (a multiple of 8), VR render scale 25 to 200%.');
+    if (mac && settings.backend !== 'emulator') throw new Error('macOS currently supports only the launcher flow; game runtimes are not available yet.');
     if (!backends.includes(settings.backend) || typeof settings.setupDone !== 'boolean') throw new Error('Choose how Refract should run games.');
     const switched = settings.backend !== state.data.settings.backend;
     state.data.settings = settings; runtime.settings = settings; await persist();
@@ -459,13 +477,18 @@ async function handle({ id, method, args }) {
 }
 
 const setupRevision = 1;
-const isSdk = async dir => !!dir && fs.access(path.join(dir, linux ? 'platform-tools/adb' : 'platform-tools/adb.exe')).then(() => true, () => false);
+const isSdk = async dir => !!dir && fs.access(path.join(dir, `platform-tools/adb${windows ? '.exe' : ''}`)).then(() => true, () => false);
 // Android Studio installs to %LOCALAPPDATA%\Android\Sdk; command-line installs often use ~\Android\Sdk.
 async function findSdk() {
   if (linux) {  // The SDK's build-tools (aapt2) read APKs; adb itself may come from the PATH (findAdb).
     for (const dir of [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, path.join(os.homedir(), 'Android/Sdk')]) if (await isSdk(dir)) return path.resolve(dir);
     const adb = await findAdb('');
     return adb && path.basename(path.dirname(adb)) === 'platform-tools' ? path.dirname(path.dirname(adb)) : path.join(os.homedir(), 'Android/Sdk');
+  }
+  if (mac) {
+    const candidates = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT, path.join(os.homedir(), 'Library/Android/sdk'), path.join(os.homedir(), 'Android/Sdk')];
+    for (const dir of candidates) if (await isSdk(dir)) return path.resolve(dir);
+    return path.join(os.homedir(), 'Library/Android/sdk');
   }
   const candidates = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT,
     path.join(process.env.LOCALAPPDATA || '', 'Android/Sdk'), path.join(os.homedir(), 'Android/Sdk')];
@@ -475,14 +498,15 @@ async function findSdk() {
 
 const loaded = (async () => {
   // Python or the Android SDK may have been installed after the shell started.
-  if (scan && !linux) await refreshPath();
+  if (scan && windows) await refreshPath();
   state = new State(dataDirectory); await state.load();
   // Digitalis (the ARM64 translator Refract needs) is built for Android 16, so the default AVD is API 36.
   state.data.settings = { avd: 'refract-google-api36', port: 5580, memoryMB: 8192, downloadDir: path.join(os.homedir(), 'Downloads', 'Refract'),
     cores: 6, showWindow: false, audio: 'dsound', hostMic: true, keepEmulator: false, pcEyeSize: 1600, vrRenderScale: 100,
     // First run shows the setup wizard, which asks which runtime to use (Settings > Runtime changes it later);
     // new Windows installs start on Refract Native, the recommended one.
-    backend: linux ? 'emulator' : 'native', setupDone: false, ...state.data.settings };
+    backend: linux || mac ? 'emulator' : 'native', setupDone: false, ...state.data.settings };
+  if (mac && state.data.settings.backend !== 'emulator') state.data.settings.backend = 'emulator';
   // A saved SDK path that has no SDK in it came from an earlier default; look for the real one.
   if (!await isSdk(state.data.settings.sdk)) state.data.settings.sdk = await findSdk();
   // Installs whose wizard predates this revision see it again (1 = Refract 1.0.0). Bump to show it to everyone once more.
@@ -500,8 +524,8 @@ const loaded = (async () => {
     state.data.settings.userId = validUserId(kept) ? kept : newUserId();
     await state.save();
   }
-  runtime = new (linux ? WaydroidRuntime : Runtime)(root, state.data.settings);
-  emulator = new (linux ? WaydroidEmulator : Emulator)(runtime, root, state.directory);
+  runtime = new (linux ? WaydroidRuntime : mac ? MacRuntime : Runtime)(root, state.data.settings);
+  emulator = new (linux ? WaydroidEmulator : mac ? MacEmulator : Emulator)(runtime, root, state.directory);
 })();
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 lines.on('line', async line => {

@@ -11,10 +11,17 @@ import { pipeline } from 'node:stream/promises';
 import { run } from './runtime.mjs';
 
 const REPOSITORY = 'MIXIDtheSilly/Refract';
-const linux = process.platform === 'linux';
+const platform = process.platform;
+const windows = platform === 'win32';
 // The release asset for this platform and the folder at the top of it.
-const assetName = /^Refract-(\d+\.\d+\.\d+)-(win64\.zip|linux-x86_64\.tar\.gz)$/;
-const platformSuffix = linux ? 'linux-x86_64.tar.gz' : 'win64.zip';
+const assetName = /^Refract-(\d+\.\d+\.\d+)-([A-Za-z0-9_.-]+\.(?:zip|tar\.gz))$/;
+export function platformAssets(target = process.platform, arch = process.arch) {
+  if (target === 'win32') return ['win64.zip'];
+  if (target === 'linux') return ['linux-x86_64.tar.gz'];
+  if (target === 'darwin') return arch === 'arm64' ? ['macos-arm64.tar.gz', 'macos-universal.tar.gz'] : ['macos-x64.tar.gz', 'macos-universal.tar.gz'];
+  return [];
+}
+const platformSuffixes = platformAssets(platform, process.arch);
 const exists = file => fs.access(file).then(() => true, () => false);
 
 const parse = version => String(version).replace(/^v/, '').split('.').map(Number);
@@ -37,7 +44,7 @@ export async function checkUpdate(root, current) {
   const release = await response.json();
   const version = String(release.tag_name || '').replace(/^v/, '');
   if (release.draft || release.prerelease || !newer(version, current)) return null;
-  const asset = (release.assets || []).find(a => a.name.endsWith(platformSuffix) && assetName.exec(a.name)?.[1] === version);
+  const asset = (release.assets || []).find(a => platformSuffixes.some(s => a.name.endsWith(s)) && assetName.exec(a.name)?.[1] === version);
   if (!asset) return null;
   // GitHub records each uploaded asset's SHA-256; older releases list it in their notes instead.
   const sha256 = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest || '')?.[1]
@@ -92,7 +99,7 @@ export async function installUpdate(root, dataDir, update, progress = () => {}) 
   if (!await updatable(root)) throw new Error('This copy of Refract is a git checkout; update it with git.');
   const { name, url, size, sha256 } = update.asset;
   const match = assetName.exec(name);
-  if (!match || !name.endsWith(platformSuffix) || !/^https:\/\/github\.com\//.test(url)) throw new Error('Unexpected update package.');
+  if (!match || !platformSuffixes.some(s => name.endsWith(s)) || !/^https:\/\/github\.com\//.test(url)) throw new Error('Unexpected update package.');
   const folder = path.join(dataDir, 'update');
   await fs.rm(folder, { recursive: true, force: true });
   await fs.mkdir(folder, { recursive: true });
@@ -102,13 +109,14 @@ export async function installUpdate(root, dataDir, update, progress = () => {}) 
   const unpacked = path.join(folder, 'files');
   await fs.mkdir(unpacked);
   // Windows 10 and 11 include bsdtar, which reads zip files.
-  await run(linux ? 'tar' : path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', archive, '-C', unpacked], { timeout: 10 * 60 * 1000 });
+  await run(windows ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar', ['-xf', archive, '-C', unpacked], { timeout: 10 * 60 * 1000 });
   const top = name.replace(/\.(zip|tar\.gz)$/, '');
   const source = path.join(unpacked, top);
-  const launcher = path.join(source, linux ? 'Refract' : 'Refract.exe');
+  const launcherName = windows ? 'Refract.exe' : 'Refract';
+  const launcher = path.join(source, launcherName);
   if (!await exists(launcher)) throw new Error('The update package has no Refract launcher in it.');
   await fs.rm(archive, { force: true });
-  const node = path.join(source, 'node', linux ? 'node' : 'node.exe');
+  const node = path.join(source, 'node', windows ? 'node.exe' : 'node');
   if (!await exists(node)) throw new Error('The update package has no Node.js in it.');
   progress('Restarting Refract');
   // The helper is a Node script run by the new package's own Node.js (so node/ here isn't locked while it's
@@ -116,7 +124,7 @@ export async function installUpdate(root, dataDir, update, progress = () => {}) 
   // console and quits at once; attached, libuv's job object ends it together with Node.
   const script = path.join(folder, 'apply.mjs');
   await fs.writeFile(script, APPLY);
-  const child = spawn(node, [script, source, root, linux ? 'Refract' : 'Refract.exe', String(process.pid), String(process.ppid)],
+  const child = spawn(node, [script, source, root, launcherName, String(process.pid), String(process.ppid)],
     { cwd: folder, detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();
   return { restart: true };

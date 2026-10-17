@@ -1,6 +1,6 @@
 # Refract launcher
 
-A native Windows desktop frontend for the Refract runtime: your installed Android
+A native desktop frontend for the Refract runtime: your installed Android
 games, owned Quest game downloads, expansion files and DLC.
 
 ## Run
@@ -38,6 +38,10 @@ Node.js, the built host programs, the OpenXR loader and Visual C++ runtime for t
 bridge, the Android-side APKs and Digitalis. Android itself (about 2.4 GB) is downloaded
 by **Set up Android** on that PC. `tools/package_readme.txt` becomes the package's
 README.txt for the person receiving it.
+
+On Linux, use `tools/package_release.sh` for `Refract-<version>-linux-x86_64.tar.gz`.
+On macOS launcher-only builds, use `tools/package_release_macos.sh` for
+`Refract-<version>-macos-<arch>.tar.gz`.
 
 ## How it is put together
 
@@ -158,5 +162,11 @@ clean shutdown). `cargo check` in `src-tauri` checks the shell.
 Meta login challenge creation and installed-game scan
 have been checked live. Account-specific downloads/install/DLC still need a
 signed-in account test; fixture coverage is not an end-to-end Meta download test.
+
+## macOS status
+
+The launcher shell, UI, account flow and downloads run on macOS. Android runtime/game
+session support is still in progress, so setup and diagnostics on macOS report runtime
+availability but cannot start or run games yet.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for RiftLift attribution.

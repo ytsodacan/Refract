@@ -10,7 +10,8 @@ import { SetupPanel } from './setup';
 export function Welcome({ state, run, pending, notify }) {
   const [backend, setBackend] = useState(state.settings.backend || 'emulator');
   const linux = state.platform === 'linux';
-  const [step, setStep] = useState(linux ? 1 : 0);
+  const windows = state.platform === 'win32';
+  const [step, setStep] = useState(windows ? 0 : 1);
   const save = (setupDone, next) => run('welcome', async () => {
     await call('settings', { ...state.settings, backend, setupDone });
     next?.();
@@ -29,9 +30,10 @@ export function Welcome({ state, run, pending, notify }) {
         </div>
       </> : <>
         {linux && <p>Refract runs games in Waydroid. Get everything below ready, or skip and do it later in Settings.</p>}
+        {state.platform === 'darwin' && <p>macOS launcher support is available, but running Android games is still in progress.</p>}
         <SetupPanel state={state} run={run} pending={pending} notify={notify} />
         <div className="welcome-actions">
-          {linux
+          {!windows
             ? <button type="button" className="btn btn-ghost" disabled={pending.has('welcome')} onClick={() => save(true)}>Skip setup</button>
             : <button type="button" className="btn btn-ghost" onClick={() => setStep(0)}>Back</button>}
           <button type="button" className="btn btn-primary" disabled={pending.has('welcome')} onClick={() => save(true)}>Finish</button>

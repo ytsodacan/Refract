@@ -1,14 +1,38 @@
-// The Meta account token is stored encrypted with Windows DPAPI for the current
-// user. It is only passed to the backend process, never to the launcher UI.
+// The Meta account token is stored encrypted with Windows DPAPI on Windows and in
+// the Keychain on macOS. It is only passed to the backend process, never to the launcher UI.
 use std::path::Path;
 
 const FILE: &str = "meta-session.dpapi";
+#[cfg(target_os = "macos")]
+const SERVICE: &str = "com.refract.launcher";
+#[cfg(target_os = "macos")]
+const USER: &str = "meta-session";
 
+#[cfg(target_os = "macos")]
+pub fn load(_dir: &Path) -> Option<String> {
+    let entry = keyring::Entry::new(SERVICE, USER).ok()?;
+    entry.get_password().ok()
+}
+
+#[cfg(not(target_os = "macos"))]
 pub fn load(dir: &Path) -> Option<String> {
     let data = std::fs::read(dir.join(FILE)).ok()?;
     String::from_utf8(unprotect(&data)?).ok()
 }
 
+#[cfg(target_os = "macos")]
+pub fn store(_dir: &Path, token: Option<&str>) -> Result<(), String> {
+    let entry = keyring::Entry::new(SERVICE, USER).map_err(|e| e.to_string())?;
+    match token {
+        Some(token) => entry.set_password(token).map_err(|e| e.to_string()),
+        None => {
+            let _ = entry.delete_credential();
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 pub fn store(dir: &Path, token: Option<&str>) -> Result<(), String> {
     let file = dir.join(FILE);
     let Some(token) = token else {
@@ -51,7 +75,7 @@ fn protect(data: &[u8]) -> Option<Vec<u8>> { crypt(data, true) }
 #[cfg(windows)]
 fn unprotect(data: &[u8]) -> Option<Vec<u8>> { crypt(data, false) }
 
-// Other platforms are only used for UI development: keep the session in memory.
+// Other non-Windows, non-macOS platforms are only used for UI development: keep the session in memory.
 #[cfg(not(windows))]
 fn protect(_: &[u8]) -> Option<Vec<u8>> { None }
 #[cfg(not(windows))]

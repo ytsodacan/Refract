@@ -9,6 +9,8 @@ window on the screen. Games run in one of three ways:
 - **Refract Native** (Windows, experimental): runs the game's ARM64 code directly on the PC.
 - **Waydroid** (Linux): a container that shares the PC's kernel and GPU.
 
+The launcher UI also runs on **macOS** (Apple Silicon and Intel), but game runtime support there is still in progress.
+
 > **Status:** experimental. Not every game works yet.
 
 ## Support Refract
@@ -35,7 +37,7 @@ games run through the Digitalis translator, or Refract Native's own ARM64 JIT.
 
 ## Requirements
 
-- Windows 10 or 11 (64-bit), or Linux with Waydroid 1.6.3 or newer
+- Windows 10 or 11 (64-bit), Linux with Waydroid 1.6.3 or newer, or macOS for launcher-only workflows
 - A graphics card from the last few years
 - 12 GB of RAM or more
 - About 10 GB of free disk space, plus room for your games
@@ -70,6 +72,11 @@ scripts/waydroid.sh play com.example.game     # --headset for SteamVR/Monado/WiV
 ```
 
 The launcher also runs on Linux. Details are in [docs/linux_waydroid.md](docs/linux_waydroid.md).
+
+### macOS
+
+The launcher shell and UI run on macOS, including Meta sign-in and library/download management. Running Android
+games from Refract on macOS is not available yet. See [docs/macos_launcher.md](docs/macos_launcher.md).
 
 ## Not included
 

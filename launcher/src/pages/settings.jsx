@@ -22,7 +22,7 @@ export function SettingsPage({ state, run, pending, notify, connect, setPage }) 
   return <div className="page">
     <header className="page-head"><div><h1 className="page-title">Settings</h1></div></header>
     <form id="settings-form" className="settings" onSubmit={save}>
-      {state.platform !== 'linux' && <section className="panel">
+      {state.platform === 'win32' && <section className="panel">
         <h2>Runtime</h2>
         <p>Games are installed separately for each runtime.</p>
         <RuntimeChoice value={draft.backend} onChange={value => edit('backend', value)} />
@@ -74,7 +74,11 @@ export function SettingsPage({ state, run, pending, notify, connect, setPage }) 
       </section>
       {draft.backend !== 'native' && <section className="panel">
         <div className="panel-row">
-          <div><h2>Android runtime</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>{state.platform === 'linux' ? 'Android runs in Waydroid. Its status, logs and debug tools are on the Android page.' : 'The virtual device, memory, CPU cores and audio are on the Emulator page, with its logs and debug tools.'}</p></div>
+          <div><h2>Android runtime</h2><p style={{ margin: '3px 0 0', color: 'var(--muted)' }}>{state.platform === 'linux'
+            ? 'Android runs in Waydroid. Its status, logs and debug tools are on the Android page.'
+            : state.platform === 'darwin'
+              ? 'Android runtime support on macOS is in progress. The Android page shows current status and diagnostics.'
+              : 'The virtual device, memory, CPU cores and audio are on the Emulator page, with its logs and debug tools.'}</p></div>
           <button type="button" className="btn btn-outline" onClick={() => setPage('emulator')}><Cpu />{state.platform === 'linux' ? 'Open Android' : 'Open Emulator'}</button>
         </div>
       </section>}
