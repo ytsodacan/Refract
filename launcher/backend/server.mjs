@@ -303,8 +303,8 @@ const methods = {
     return { ...result, running: runtime.game?.package || '' };
   },
   emulatorAction: async (action, arg) => {
-    if (mac) throw new Error('Android runtime controls are not available on macOS yet.');
     if (!Object.hasOwn(emulatorActions, action)) throw new Error('Unknown emulator action.');
+    if (mac) throw new Error('Android runtime controls are not available on macOS yet.');
     if (emulatorTask) throw new Error('Wait for the current emulator task to finish.');
     const update = stage => { emulatorTask = { action, stage }; changed(); };
     update('');
